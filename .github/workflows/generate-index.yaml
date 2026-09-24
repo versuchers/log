@@ -4,61 +4,272 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Generate HTML Index
+      - name: Generate Interactive index.html
         run: |
-          cat << 'EOF' > index.html
-          <!DOCTYPE html>
+          cat << 'EOF' > generate_index.py
+          import os
+
+          BASE_URL = "https://versuchers.github.io/log"
+          EXCLUDE_DIRS = {'.git', '.github'}
+
+          def build_tree(path):
+              tree = {'dirs': {}, 'files': []}
+              try:
+                  entries = sorted(os.listdir(path))
+              except FileNotFoundError:
+                  return tree
+
+              for entry in entries:
+                  if entry.startswith('.'):
+                      continue
+                  full_path = os.path.join(path, entry)
+                  if os.path.isdir(full_path):
+                      if entry not in EXCLUDE_DIRS:
+                          tree['dirs'][entry] = build_tree(full_path)
+                  elif entry.lower().endswith(('.webp', '.png', '.jpg', '.jpeg', '.gif')):
+                      tree['files'].append(entry)
+              return tree
+
+          def render_html_tree(tree, current_rel_path=""):
+              html = []
+              
+              # Subdirectories (Foldable)
+              for dir_name, sub_tree in tree['dirs'].items():
+                  rel_path = f"{current_rel_path}/{dir_name}" if current_rel_path else dir_name
+                  html.append(f'<details class="folder">')
+                  html.append(f'  <summary class="folder-title">📁 {dir_name}</summary>')
+                  html.append(f'  <div class="folder-content">')
+                  html.append(render_html_tree(sub_tree, rel_path))
+                  html.append(f'  </div>')
+                  html.append(f'</details>')
+
+              # Files (Clickable & Copyable)
+              if tree['files']:
+                  html.append('<ul class="file-list">')
+                  for file_name in tree['files']:
+                      file_rel_path = f"{current_rel_path}/{file_name}" if current_rel_path else file_name
+                      file_url = f"{BASE_URL}/{file_rel_path}"
+                      html.append(f'''
+                      <li class="file-item">
+                        <span class="file-icon">🖼️</span>
+                        <a href="{file_url}" target="_blank" class="file-name">{file_name}</a>
+                        <button class="copy-btn" onclick="copyToClipboard('{file_url}', this)">Link Kopyala</button>
+                      </li>
+                      ''')
+                  html.append('</ul>')
+
+              if not tree['dirs'] and not tree['files']:
+                  html.append('<p class="empty-msg">Bu klasör boş.</p>')
+
+              return '\n'.join(html)
+
+          root_tree = build_tree('.')
+          tree_html = render_html_tree(root_tree)
+
+          html_content = f'''<!DOCTYPE html>
           <html lang="tr">
           <head>
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <title>Log Görsel Arşivi</title>
             <style>
-              body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 900px; margin: 40px auto; padding: 0 20px; background: #0d1117; color: #c9d1d9; }
-              h1 { border-bottom: 1px solid #30363d; padding-bottom: 10px; color: #58a6ff; }
-              ul { list-style-type: none; padding-left: 20px; }
-              li { margin: 6px 0; }
-              li::before { content: "📄 "; }
-              li.dir { font-weight: bold; margin-top: 15px; }
-              li.dir::before { content: "📁 "; }
-              a { color: #58a6ff; text-decoration: none; word-break: break-all; }
-              a:hover { text-decoration: underline; }
+              :root {{
+                --bg: #0f172a;
+                --card-bg: #1e293b;
+                --text: #f8fafc;
+                --text-muted: #94a3b8;
+                --accent: #38bdf8;
+                --accent-hover: #0284c7;
+                --border: #334155;
+              }}
+
+              body {{
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+                background-color: var(--bg);
+                color: var(--text);
+                margin: 0;
+                padding: 2rem 1rem;
+                display: flex;
+                justify-content: center;
+              }}
+
+              .container {{
+                width: 100%;
+                max-width: 800px;
+              }}
+
+              h1 {{
+                font-size: 1.8rem;
+                margin-bottom: 0.5rem;
+                color: var(--accent);
+                display: flex;
+                align-items: center;
+                gap: 0.5rem;
+              }}
+
+              p.subtitle {{
+                color: var(--text-muted);
+                margin-bottom: 2rem;
+                font-size: 0.95rem;
+              }}
+
+              details.folder {{
+                background: var(--card-bg);
+                border: 1px solid var(--border);
+                border-radius: 8px;
+                margin-bottom: 0.5rem;
+                padding: 0.5rem 0.8rem;
+                transition: all 0.2s ease;
+              }}
+
+              details.folder[open] {{
+                border-color: var(--accent);
+              }}
+
+              summary.folder-title {{
+                font-weight: 600;
+                font-size: 1.05rem;
+                cursor: pointer;
+                user-select: none;
+                list-style: none;
+                display: flex;
+                align-items: center;
+                gap: 0.5rem;
+                color: var(--text);
+              }}
+
+              summary.folder-title::-webkit-details-marker {{
+                display: none;
+              }}
+
+              summary.folder-title::before {{
+                content: "►";
+                font-size: 0.75rem;
+                color: var(--accent);
+                transition: transform 0.2s ease;
+              }}
+
+              details[open] > summary.folder-title::before {{
+                transform: rotate(90deg);
+              }}
+
+              .folder-content {{
+                margin-top: 0.5rem;
+                padding-left: 1rem;
+                border-left: 2px solid var(--border);
+              }}
+
+              .file-list {{
+                list-style: none;
+                padding: 0;
+                margin: 0.5rem 0;
+              }}
+
+              .file-item {{
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                background: rgba(255, 255, 255, 0.03);
+                padding: 0.4rem 0.8rem;
+                border-radius: 6px;
+                margin-bottom: 0.3rem;
+                font-size: 0.9rem;
+              }}
+
+              .file-item:hover {{
+                background: rgba(255, 255, 255, 0.07);
+              }}
+
+              .file-name {{
+                color: var(--text);
+                text-decoration: none;
+                word-break: break-all;
+                margin-right: 1rem;
+              }}
+
+              .file-name:hover {{
+                color: var(--accent);
+                text-decoration: underline;
+              }}
+
+              .copy-btn {{
+                background: var(--accent);
+                color: #0f172a;
+                border: none;
+                padding: 0.3rem 0.6rem;
+                border-radius: 4px;
+                font-size: 0.8rem;
+                font-weight: 600;
+                cursor: pointer;
+                white-space: nowrap;
+                transition: background 0.2s ease;
+              }}
+
+              .copy-btn:hover {{
+                background: var(--accent-hover);
+                color: #ffffff;
+              }}
+
+              .copy-btn.copied {{
+                background: #10b981;
+                color: #ffffff;
+              }}
+
+              .empty-msg {{
+                color: var(--text-muted);
+                font-style: italic;
+                font-size: 0.85rem;
+                margin: 0.4rem 0;
+              }}
             </style>
           </head>
           <body>
-            <h1>📁 Log Görsel Arşivi</h1>
-            <p>Son Güncelleme: Otomatik İndeks</p>
-            <ul>
+            <div class="container">
+              <h1>🗂️ Log Görsel Arşivi</h1>
+              <p class="subtitle">Klasörlerin üzerine tıklayarak alt dizinleri açabilir, görsellerin doğrudan linkini kopyalayabilirsiniz.</p>
+              
+              {tree_html}
+            </div>
+
+            <script>
+              function copyToClipboard(url, btn) {{
+                navigator.clipboard.writeText(url).then(() => {{
+                  const originalText = btn.innerText;
+                  btn.innerText = "Kopyalandı!";
+                  btn.classList.add("copied");
+                  setTimeout(() => {{
+                    btn.innerText = originalText;
+                    btn.classList.remove("copied");
+                  }}, 2000);
+                }});
+              }}
+            </script>
+          </body>
+          </html>
+          '''
+
+          with open('index.html', 'w', encoding='utf-8') as f:
+              f.write(html_content)
           EOF
 
-          # Klasör ve dosyaları listeleyip HTML'e dönüştür
-          find . -maxdepth 5 -not -path '*/.*' -not -name 'index.html' | sort | while read -r file; do
-            clean_path="${file#./}"
-            if [ "$clean_path" != "" ]; then
-              indent=$(echo "$clean_path" | tr -cd '/' | wc -c)
-              padding=$((indent * 20))
-              if [ -d "$file" ]; then
-                echo "<li class='dir' style='margin-left: ${padding}px;'>$clean_path</li>" >> index.html
-              else
-                echo "<li style='margin-left: ${padding}px;'><a href='./$clean_path' target='_blank'>$(basename "$clean_path")</a></li>" >> index.html
-              fi
-            fi
-          done
+          python generate_index.py
 
-          echo "</ul></body></html>" >> index.html
-
-      - name: Commit and Push changes
+      - name: Commit and Push
         run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add index.html
-          git diff-index --quiet HEAD || git commit -m "Auto-update index.html [skip ci]"
+          git commit -m "Auto-generate interactive folder index" || exit 0
           git push
