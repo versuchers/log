@@ -1,0 +1,64 @@
+name: Generate Directory Index
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Generate HTML Index
+        run: |
+          cat << 'EOF' > index.html
+          <!DOCTYPE html>
+          <html lang="tr">
+          <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Log Görsel Arşivi</title>
+            <style>
+              body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 900px; margin: 40px auto; padding: 0 20px; background: #0d1117; color: #c9d1d9; }
+              h1 { border-bottom: 1px solid #30363d; padding-bottom: 10px; color: #58a6ff; }
+              ul { list-style-type: none; padding-left: 20px; }
+              li { margin: 6px 0; }
+              li::before { content: "📄 "; }
+              li.dir { font-weight: bold; margin-top: 15px; }
+              li.dir::before { content: "📁 "; }
+              a { color: #58a6ff; text-decoration: none; word-break: break-all; }
+              a:hover { text-decoration: underline; }
+            </style>
+          </head>
+          <body>
+            <h1>📁 Log Görsel Arşivi</h1>
+            <p>Son Güncelleme: Otomatik İndeks</p>
+            <ul>
+          EOF
+
+          # Klasör ve dosyaları listeleyip HTML'e dönüştür
+          find . -maxdepth 5 -not -path '*/.*' -not -name 'index.html' | sort | while read -r file; do
+            clean_path="${file#./}"
+            if [ "$clean_path" != "" ]; then
+              indent=$(echo "$clean_path" | tr -cd '/' | wc -c)
+              padding=$((indent * 20))
+              if [ -d "$file" ]; then
+                echo "<li class='dir' style='margin-left: ${padding}px;'>$clean_path</li>" >> index.html
+              else
+                echo "<li style='margin-left: ${padding}px;'><a href='./$clean_path' target='_blank'>$(basename "$clean_path")</a></li>" >> index.html
+              fi
+            fi
+          done
+
+          echo "</ul></body></html>" >> index.html
+
+      - name: Commit and Push changes
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add index.html
+          git diff-index --quiet HEAD || git commit -m "Auto-update index.html [skip ci]"
+          git push
