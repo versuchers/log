@@ -1,4 +1,4 @@
-name: Generate Directory Index
+name: Build and deploy (index + Pages)
 
 on:
   push:
@@ -6,11 +6,24 @@ on:
       - main
   workflow_dispatch:
 
+# Artik icerik yazma izni yok: bu workflow index.html'i URETIR ve
+# yayinlar, depoya commit ATMAZ. Boylece "push reddedildi (behind)"
+# durumu bir daha olusmaz.
 permissions:
-  contents: write
+  contents: read
+  pages: write
+  id-token: write
+
+# Ayni anda iki deploy ust uste binmesin.
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
 
 jobs:
   build:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
@@ -266,10 +279,24 @@ jobs:
 
           python generate_index.py
 
-      - name: Commit and Push
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add index.html
-          git commit -m "Auto-generate interactive folder index" || exit 0
-          git push
+      # onceki surum burada `git commit` + `git push` ile main'e
+      # geri yaziyordu. Iki sorun cikardi:
+      #   1) kullanicinin push'u "behind 1" oldugu icin reddediliyordu,
+      #   2) GitHub, GITHUB_TOKEN ile yapilan push'a yeni workflow
+      #      calistirmaz (loop korumasi) -> uretilen index.html hicbir
+      #      zaman yayinlanmiyor, site hep eski listeyi gosteriyordu.
+      # Dogru sira: index uret -> artifact yukle -> Pages'e deploy et.
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          # Butun repo gonderiliyor: sayfa dosya linklerini
+          # /log/<klasor>/<dosya> adresinden veriyor, yani gorseller de
+          # yayinlanmali.
+          path: '.'
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
