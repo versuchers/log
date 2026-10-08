@@ -300,3 +300,16 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v5
+
+      # 08.10.2026: gorsel push'undan sonra ana site (versuchers.github.io)
+      # verisini de tazelesin diye repository_dispatch olayi gonderilir.
+      # GITHUB_TOKEN baska repoya istek atamaz; bu yuzden ana repoda
+      # "Contents: write" yetkili bir PAT, bu reponun MAIN_REPO_TOKEN
+      # secret'ina kayitli olmali.
+      - name: Ana siteye veri tazeleme sinyali gonder
+        run: |
+          curl -sSf -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${{ secrets.MAIN_REPO_TOKEN }}" \
+            https://api.github.com/repos/versuchers/versuchers.github.io/dispatches \
+            -d '{"event_type":"log-guncellendi"}'
